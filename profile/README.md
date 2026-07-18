@@ -49,6 +49,7 @@ Nous travaillons sur des solutions pensées pour être utiles, maintenables et a
 
 ## Contact
 
+- 📧 Email : **contact@switchcompagnie.eu**
 - GitHub : [@SwitchCompagnie](https://github.com/SwitchCompagnie)
 
 ---
