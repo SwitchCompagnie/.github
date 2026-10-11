@@ -1,0 +1,7 @@
+{
+  "name": "Laravel CI (SwitchCompagnie)",
+  "description": "CI commune des projets Laravel : Pint, PHPStan/Larastan, tests PHP en matrice, build Vite et audit de sécurité.",
+  "iconName": "laravel",
+  "categories": ["PHP", "Laravel", "Continuous integration"],
+  "filePatterns": ["^artisan$", "^composer\\.json$"]
+}

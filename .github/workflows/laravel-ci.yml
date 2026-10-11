@@ -1,0 +1,484 @@
+# Workflow CI réutilisable pour tous les projets Laravel de SwitchCompagnie.
+#
+# Utilisation (dans .github/workflows/ci.yml du projet) :
+#
+#   jobs:
+#     laravel:
+#       name: CI
+#       uses: SwitchCompagnie/.github/.github/workflows/laravel-ci.yml@main
+#       with:
+#         php-versions: '["8.4", "8.5"]'
+#
+# Toutes les étapes s'adaptent au projet : Pint, PHPStan/Larastan, Passport,
+# Paratest, Vite… ne tournent que si le projet les utilise.
+name: Laravel CI (shared)
+
+on:
+  workflow_call:
+    inputs:
+      php-versions:
+        description: 'Versions PHP testées (tableau JSON), ex. ["8.4", "8.5"]'
+        type: string
+        default: '["8.4", "8.5"]'
+      php-version-tools:
+        description: Version PHP utilisée pour Pint, PHPStan et composer audit
+        type: string
+        default: '8.5'
+      node-version:
+        description: Version de Node.js pour le build Vite
+        type: string
+        default: '22'
+      extensions:
+        description: Extensions PHP (le pilote PDO de la base choisie est ajouté automatiquement)
+        type: string
+        default: 'bcmath, ctype, curl, dom, fileinfo, gd, intl, mbstring, pcntl, pdo, pdo_sqlite, sqlite3, xml, zip'
+      database:
+        description: Base de données pour les migrations et les tests (sqlite, mysql ou pgsql)
+        type: string
+        default: sqlite
+      working-directory:
+        description: Dossier du projet Laravel dans le dépôt
+        type: string
+        default: '.'
+      env-file:
+        description: Fichier copié en .env (vide = .env.ci s'il existe, sinon .env.example)
+        type: string
+        default: ''
+      run-pint:
+        description: Vérifier le style de code avec Laravel Pint (ignoré si Pint n'est pas installé)
+        type: boolean
+        default: true
+      run-larastan:
+        description: Analyse statique PHPStan/Larastan (ignorée si vendor/bin/phpstan est absent)
+        type: boolean
+        default: true
+      run-tests:
+        description: Lancer les migrations et php artisan test
+        type: boolean
+        default: true
+      run-migrations:
+        description: Lancer php artisan migrate --force avant les tests
+        type: boolean
+        default: true
+      run-seed:
+        description: Lancer php artisan db:seed --force après les migrations
+        type: boolean
+        default: false
+      parallel-tests:
+        description: Utiliser php artisan test --parallel quand Paratest est installé
+        type: boolean
+        default: true
+      lint-blade:
+        description: Compiler les vues Blade et vérifier leur syntaxe PHP
+        type: boolean
+        default: true
+      run-npm-build:
+        description: npm ci && npm run build (ignoré si package.json est absent)
+        type: boolean
+        default: true
+      run-audit:
+        description: composer audit et npm audit
+        type: boolean
+        default: true
+      composer-audit-blocking:
+        description: Faire échouer la CI si composer audit trouve une faille
+        type: boolean
+        default: false
+      npm-audit-level:
+        description: Niveau minimal signalé par npm audit (low, moderate, high, critical)
+        type: string
+        default: high
+      npm-audit-blocking:
+        description: Faire échouer la CI si npm audit trouve une faille
+        type: boolean
+        default: false
+      run-secret-scan:
+        description: Scanner l'historique git avec Gitleaks (bloquant)
+        type: boolean
+        default: false
+      timeout-minutes:
+        description: Durée maximale de chaque job
+        type: number
+        default: 20
+
+permissions:
+  contents: read
+
+env:
+  COMPOSER_NO_INTERACTION: '1'
+  COMPOSER_PROCESS_TIMEOUT: '0'
+
+jobs:
+  pint:
+    name: Code Style (Pint)
+    if: ${{ inputs.run-pint }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version-tools }}
+          extensions: ${{ inputs.extensions }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ inputs.php-version-tools }}-${{ hashFiles(format('{0}/composer.lock', inputs.working-directory)) }}
+          restore-keys: ${{ runner.os }}-composer-${{ inputs.php-version-tools }}-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-scripts
+
+      - name: Run Pint
+        run: |
+          if [ ! -x vendor/bin/pint ]; then
+            echo "::warning title=Pint absent::laravel/pint n'est pas dans require-dev, vérification du style ignorée."
+            exit 0
+          fi
+          vendor/bin/pint --test
+
+  phpstan:
+    name: Static Analysis (PHPStan)
+    if: ${{ inputs.run-larastan }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version-tools }}
+          extensions: ${{ inputs.extensions }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ inputs.php-version-tools }}-${{ hashFiles(format('{0}/composer.lock', inputs.working-directory)) }}
+          restore-keys: ${{ runner.os }}-composer-${{ inputs.php-version-tools }}-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Run PHPStan / Larastan
+        run: |
+          if [ ! -x vendor/bin/phpstan ]; then
+            echo "PHPStan/Larastan n'est pas installé : analyse statique ignorée."
+            echo "PHPStan/Larastan non installé : analyse ignorée." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! ls phpstan.neon phpstan.neon.dist phpstan.dist.neon >/dev/null 2>&1; then
+            echo "::warning title=PHPStan sans configuration::Aucun phpstan.neon(.dist) trouvé, analyse ignorée."
+            exit 0
+          fi
+          vendor/bin/phpstan analyse --no-progress --error-format=github --memory-limit=1G
+
+  frontend:
+    name: Frontend Build (Vite)
+    if: ${{ inputs.run-npm-build }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    outputs:
+      built: ${{ steps.build.outputs.built }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Detect package.json
+        id: detect
+        run: |
+          echo "package=$([ -f package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "lock=$([ -f package-lock.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        if: ${{ steps.detect.outputs.package == 'true' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: ${{ steps.detect.outputs.lock == 'true' && 'npm' || '' }}
+          cache-dependency-path: ${{ format('{0}/package-lock.json', inputs.working-directory) }}
+
+      - name: Install npm dependencies
+        if: ${{ steps.detect.outputs.package == 'true' }}
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+
+      - name: Build assets
+        id: build
+        if: ${{ steps.detect.outputs.package == 'true' }}
+        run: |
+          if ! node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+            echo "Pas de script \"build\" dans package.json : build ignoré."
+            echo "built=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npm run build
+          if [ -d public/build ]; then
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload build
+        if: ${{ steps.build.outputs.built == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: vite-build
+          path: ${{ format('{0}/public/build', inputs.working-directory) }}
+          retention-days: 1
+          if-no-files-found: error
+
+  tests:
+    name: PHP ${{ matrix.php }} Tests
+    needs: frontend
+    if: ${{ !cancelled() && inputs.run-tests && needs.frontend.result != 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ${{ fromJSON(inputs.php-versions) }}
+
+    services:
+      mysql:
+        image: ${{ inputs.database == 'mysql' && 'mysql:8.4' || '' }}
+        env:
+          MYSQL_DATABASE: testing
+          MYSQL_USER: laravel
+          MYSQL_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -ppassword"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 18
+      postgres:
+        image: ${{ inputs.database == 'pgsql' && 'postgres:17' || '' }}
+        env:
+          POSTGRES_DB: testing
+          POSTGRES_USER: laravel
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U laravel -d testing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 18
+
+    env:
+      APP_ENV: testing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: ${{ inputs.extensions }}${{ inputs.database == 'mysql' && ', pdo_mysql' || '' }}${{ inputs.database == 'pgsql' && ', pdo_pgsql' || '' }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer packages
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ matrix.php }}-${{ hashFiles(format('{0}/composer.lock', inputs.working-directory)) }}
+          restore-keys: ${{ runner.os }}-composer-${{ matrix.php }}-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress
+
+      - name: Download Vite build
+        if: ${{ needs.frontend.outputs.built == 'true' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: vite-build
+          path: ${{ format('{0}/public/build', inputs.working-directory) }}
+
+      - name: Prepare environment
+        env:
+          ENV_FILE: ${{ inputs.env-file }}
+          DATABASE: ${{ inputs.database }}
+        run: |
+          if [ -n "$ENV_FILE" ]; then cp "$ENV_FILE" .env
+          elif [ -f .env.ci ]; then cp .env.ci .env
+          elif [ -f .env.example ]; then cp .env.example .env
+          else touch .env
+          fi
+          grep -q '^APP_KEY=' .env || echo 'APP_KEY=' >> .env
+
+          # Configuration base de données de la CI (remplace les DB_* du fichier copié)
+          sed -i -E '/^[#[:space:]]*DB_(CONNECTION|HOST|PORT|DATABASE|USERNAME|PASSWORD|URL)=/d' .env
+          case "$DATABASE" in
+            sqlite)
+              mkdir -p database && touch database/database.sqlite
+              db=(DB_CONNECTION=sqlite "DB_DATABASE=$PWD/database/database.sqlite") ;;
+            mysql)
+              db=(DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=testing DB_USERNAME=laravel DB_PASSWORD=password) ;;
+            pgsql)
+              db=(DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=testing DB_USERNAME=laravel DB_PASSWORD=password) ;;
+            *)
+              echo "::error::database doit valoir sqlite, mysql ou pgsql (reçu : $DATABASE)"; exit 1 ;;
+          esac
+          printf '%s\n' "${db[@]}" >> .env
+          # Pour MySQL/PostgreSQL, on force aussi ces valeurs pour les tests
+          # (phpunit.xml force souvent sqlite :memory:)
+          if [ "$DATABASE" != "sqlite" ]; then printf '%s\n' "${db[@]}" >> "$GITHUB_ENV"; fi
+
+          php artisan key:generate --force
+
+      - name: Generate Passport keys
+        run: |
+          if [ -d vendor/laravel/passport ]; then
+            php artisan passport:keys --force
+          else
+            echo "laravel/passport non installé : étape ignorée."
+          fi
+
+      - name: Run migrations
+        if: ${{ inputs.run-migrations }}
+        run: php artisan migrate --force
+
+      - name: Seed database
+        if: ${{ inputs.run-migrations && inputs.run-seed }}
+        run: php artisan db:seed --force
+
+      - name: Compile and lint Blade views
+        if: ${{ inputs.lint-blade }}
+        run: |
+          php artisan view:cache
+          shopt -s nullglob
+          for f in storage/framework/views/*.php; do php -l "$f" > /dev/null || exit 1; done
+          php artisan view:clear
+
+      - name: Run tests
+        env:
+          PARALLEL: ${{ inputs.parallel-tests }}
+        run: |
+          if [ "$PARALLEL" = "true" ] && [ -x vendor/bin/paratest ]; then
+            php artisan test --parallel
+          else
+            php artisan test
+          fi
+
+  security:
+    name: Security Audit
+    if: ${{ inputs.run-audit }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version-tools }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Composer audit
+        continue-on-error: ${{ !inputs.composer-audit-blocking }}
+        run: |
+          if [ ! -f composer.lock ]; then
+            echo "::warning title=composer.lock absent::Impossible d'auditer les dépendances PHP."
+            exit 0
+          fi
+          composer audit --locked --no-interaction
+
+      - name: Setup Node
+        if: ${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) != '' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: npm audit
+        if: ${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) != '' }}
+        continue-on-error: ${{ !inputs.npm-audit-blocking }}
+        env:
+          AUDIT_LEVEL: ${{ inputs.npm-audit-level }}
+        run: npm audit --audit-level="$AUDIT_LEVEL" --omit=dev
+
+  secrets:
+    name: Secret Scan (Gitleaks)
+    if: ${{ inputs.run-secret-scan }}
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version
+
+      - name: Scan git history
+        run: '"$RUNNER_TEMP/gitleaks" detect --source . --redact --no-banner --exit-code 1'
