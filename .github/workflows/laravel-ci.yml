@@ -40,6 +40,10 @@ on:
         description: Dossier du projet Laravel dans le dépôt
         type: string
         default: '.'
+      force-test-database:
+        description: Avec mysql/mariadb/pgsql, faire aussi tourner les tests sur cette base (sinon les tests suivent phpunit.xml, souvent sqlite :memory:, et la base sert aux migrations)
+        type: boolean
+        default: false
       env-file:
         description: Fichier copié en .env (vide = .env.ci s'il existe, sinon .env.example)
         type: string
@@ -368,6 +372,7 @@ jobs:
         env:
           ENV_FILE: ${{ inputs.env-file }}
           DATABASE: ${{ inputs.database }}
+          FORCE_TEST_DB: ${{ inputs.force-test-database }}
         run: |
           if [ -n "$ENV_FILE" ]; then cp "$ENV_FILE" .env
           elif [ -f .env.ci ]; then cp .env.ci .env
@@ -392,9 +397,10 @@ jobs:
               echo "::error::database doit valoir sqlite, mysql, mariadb ou pgsql (reçu : $DATABASE)"; exit 1 ;;
           esac
           printf '%s\n' "${db[@]}" >> .env
-          # Pour MySQL/MariaDB/PostgreSQL, on force aussi ces valeurs pour les tests
-          # (phpunit.xml force souvent sqlite :memory:)
-          if [ "$DATABASE" != "sqlite" ]; then printf '%s\n' "${db[@]}" >> "$GITHUB_ENV"; fi
+          # Option : forcer aussi la base pour les tests (prioritaire sur les <env> de phpunit.xml)
+          if [ "$DATABASE" != "sqlite" ] && [ "$FORCE_TEST_DB" = "true" ]; then
+            printf '%s\n' "${db[@]}" >> "$GITHUB_ENV"
+          fi
 
           php artisan key:generate --force
 

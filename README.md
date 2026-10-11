@@ -56,6 +56,7 @@ Pour un nouveau dépôt, le plus simple : onglet **Actions**, puis **New workflo
 | `node-version` | `22` | Node.js du build Vite |
 | `extensions` | bcmath, ctype, curl, dom, fileinfo, gd, intl, mbstring, pcntl, pdo, pdo_sqlite, sqlite3, xml, zip | extensions PHP (le pilote PDO MySQL/MariaDB/PostgreSQL est ajouté tout seul) |
 | `database` | `sqlite` | `sqlite`, `mysql` (8.4), `mariadb` (11.4) ou `pgsql` (17) |
+| `force-test-database` | `false` | avec mysql/mariadb/pgsql, lancer aussi les tests sur cette base (sinon : migrations sur la base, tests selon `phpunit.xml`) |
 | `working-directory` | `.` | dossier du projet Laravel |
 | `env-file` | auto | fichier copié en `.env` |
 | `run-pint` | `true` | style de code |
