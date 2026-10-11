@@ -10,7 +10,7 @@ Le workflow réutilisable [`.github/workflows/laravel-ci.yml`](.github/workflows
 | --- | --- |
 | `Code Style (Pint)` | `vendor/bin/pint --test` (ignoré si Pint n'est pas installé) |
 | `Static Analysis (PHPStan)` | Larastan/PHPStan, seulement si `vendor/bin/phpstan` et un `phpstan.neon(.dist)` existent |
-| `Frontend Build (Vite)` | `npm ci && npm run build` si `package.json` existe, le build est réutilisé par les tests |
+| `Frontend Build (Vite)` | `npm ci && npm run build` si `package.json` existe (le job de tests refait le build pour le manifest Vite, sans artefact pour ne pas consommer le quota de stockage) |
 | `PHP x.y Tests` | matrice PHP, cache Composer, `.env` depuis `.env.ci` ou `.env.example`, `key:generate`, base SQLite/MySQL/MariaDB/PostgreSQL, `migrate`, `passport:keys` si Passport est installé, compilation des vues Blade, `php artisan test` (`--parallel` si Paratest est installé) |
 | `Security Audit` | `composer audit` et `npm audit --audit-level=high`, non bloquants par défaut |
 | `Secret Scan (Gitleaks)` | optionnel (`run-secret-scan: true`), bloquant |
