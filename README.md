@@ -11,7 +11,7 @@ Le workflow réutilisable [`.github/workflows/laravel-ci.yml`](.github/workflows
 | `Code Style (Pint)` | `vendor/bin/pint --test` (ignoré si Pint n'est pas installé) |
 | `Static Analysis (PHPStan)` | Larastan/PHPStan, seulement si `vendor/bin/phpstan` et un `phpstan.neon(.dist)` existent |
 | `Frontend Build (Vite)` | `npm ci && npm run build` si `package.json` existe, le build est réutilisé par les tests |
-| `PHP x.y Tests` | matrice PHP, cache Composer, `.env` depuis `.env.ci` ou `.env.example`, `key:generate`, base SQLite/MySQL/PostgreSQL, `migrate`, `passport:keys` si Passport est installé, compilation des vues Blade, `php artisan test` (`--parallel` si Paratest est installé) |
+| `PHP x.y Tests` | matrice PHP, cache Composer, `.env` depuis `.env.ci` ou `.env.example`, `key:generate`, base SQLite/MySQL/MariaDB/PostgreSQL, `migrate`, `passport:keys` si Passport est installé, compilation des vues Blade, `php artisan test` (`--parallel` si Paratest est installé) |
 | `Security Audit` | `composer audit` et `npm audit --audit-level=high`, non bloquants par défaut |
 | `Secret Scan (Gitleaks)` | optionnel (`run-secret-scan: true`), bloquant |
 
@@ -54,8 +54,8 @@ Pour un nouveau dépôt, le plus simple : onglet **Actions**, puis **New workflo
 | `php-versions` | `["8.4", "8.5"]` | versions PHP testées (JSON) |
 | `php-version-tools` | `8.5` | PHP pour Pint, PHPStan et l'audit |
 | `node-version` | `22` | Node.js du build Vite |
-| `extensions` | bcmath, ctype, curl, dom, fileinfo, gd, intl, mbstring, pcntl, pdo, pdo_sqlite, sqlite3, xml, zip | extensions PHP (le pilote PDO MySQL/PostgreSQL est ajouté tout seul) |
-| `database` | `sqlite` | `sqlite`, `mysql` (8.4) ou `pgsql` (17) |
+| `extensions` | bcmath, ctype, curl, dom, fileinfo, gd, intl, mbstring, pcntl, pdo, pdo_sqlite, sqlite3, xml, zip | extensions PHP (le pilote PDO MySQL/MariaDB/PostgreSQL est ajouté tout seul) |
+| `database` | `sqlite` | `sqlite`, `mysql` (8.4), `mariadb` (11.4) ou `pgsql` (17) |
 | `working-directory` | `.` | dossier du projet Laravel |
 | `env-file` | auto | fichier copié en `.env` |
 | `run-pint` | `true` | style de code |

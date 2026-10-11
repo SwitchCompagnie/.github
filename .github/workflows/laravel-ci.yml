@@ -33,7 +33,7 @@ on:
         type: string
         default: 'bcmath, ctype, curl, dom, fileinfo, gd, intl, mbstring, pcntl, pdo, pdo_sqlite, sqlite3, xml, zip'
       database:
-        description: Base de données pour les migrations et les tests (sqlite, mysql ou pgsql)
+        description: Base de données pour les migrations et les tests (sqlite, mysql, mariadb ou pgsql)
         type: string
         default: sqlite
       working-directory:
@@ -295,6 +295,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 18
+      mariadb:
+        image: ${{ inputs.database == 'mariadb' && 'mariadb:11.4' || '' }}
+        env:
+          MARIADB_DATABASE: testing
+          MARIADB_USER: laravel
+          MARIADB_PASSWORD: password
+          MARIADB_ROOT_PASSWORD: password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 18
       postgres:
         image: ${{ inputs.database == 'pgsql' && 'postgres:17' || '' }}
         env:
@@ -322,7 +336,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: ${{ inputs.extensions }}${{ inputs.database == 'mysql' && ', pdo_mysql' || '' }}${{ inputs.database == 'pgsql' && ', pdo_pgsql' || '' }}
+          extensions: ${{ inputs.extensions }}${{ (inputs.database == 'mysql' || inputs.database == 'mariadb') && ', pdo_mysql' || '' }}${{ inputs.database == 'pgsql' && ', pdo_pgsql' || '' }}
           coverage: none
           tools: composer:v2
 
@@ -367,13 +381,15 @@ jobs:
               db=(DB_CONNECTION=sqlite "DB_DATABASE=$PWD/database/database.sqlite") ;;
             mysql)
               db=(DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=testing DB_USERNAME=laravel DB_PASSWORD=password) ;;
+            mariadb)
+              db=(DB_CONNECTION=mariadb DB_HOST=127.0.0.1 DB_PORT=3306 DB_DATABASE=testing DB_USERNAME=laravel DB_PASSWORD=password) ;;
             pgsql)
               db=(DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=testing DB_USERNAME=laravel DB_PASSWORD=password) ;;
             *)
-              echo "::error::database doit valoir sqlite, mysql ou pgsql (reçu : $DATABASE)"; exit 1 ;;
+              echo "::error::database doit valoir sqlite, mysql, mariadb ou pgsql (reçu : $DATABASE)"; exit 1 ;;
           esac
           printf '%s\n' "${db[@]}" >> .env
-          # Pour MySQL/PostgreSQL, on force aussi ces valeurs pour les tests
+          # Pour MySQL/MariaDB/PostgreSQL, on force aussi ces valeurs pour les tests
           # (phpunit.xml force souvent sqlite :memory:)
           if [ "$DATABASE" != "sqlite" ]; then printf '%s\n' "${db[@]}" >> "$GITHUB_ENV"; fi
 
